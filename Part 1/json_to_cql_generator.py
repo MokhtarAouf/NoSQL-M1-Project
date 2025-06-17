@@ -18,6 +18,20 @@ def cassandra_value(val):
         return f"'{escape(val)}'"
     return val
 
+def clean_decimal(val):
+    """Ensure the value is a valid CQL decimal or return null."""
+    if val is None:
+        return "null"
+    if isinstance(val, (int, float)):
+        return val
+    if isinstance(val, str):
+        try:
+            cleaned = val.replace('$', '').replace(',', '').strip()
+            return float(cleaned)
+        except:
+            return "null"
+    return "null"
+
 insert_statements = []
 
 with open("cleaned-companies2.json", "r") as file:
@@ -54,7 +68,7 @@ with open("cleaned-companies2.json", "r") as file:
             {cassandra_value(company.get("total_money_raised"))},
             {cassandra_value(company.get("overview"))},
             {cassandra_value(company.get("twitter_username"))},
-            {cassandra_value((company.get("acquisition") or {}).get("price_amount"))},
+            {clean_decimal((company.get("acquisition") or {}).get("price_amount"))},
             {cassandra_value((company.get("acquisition") or {}).get("acquired_year"))},
             {cassandra_value((company.get("acquisition") or {}).get("acquired_month"))},
             {cassandra_value((company.get("acquisition") or {}).get("acquired_day"))},
@@ -64,7 +78,38 @@ with open("cleaned-companies2.json", "r") as file:
 
         insert_statements.append(insert)
 
+schema_header = """
+CREATE KEYSPACE IF NOT EXISTS PROJECT WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1};
+USE PROJECT;
+
+CREATE TABLE IF NOT EXISTS companies (
+    permalink text PRIMARY KEY,
+    name text,
+    category_code text,
+    description text,
+    homepage_url text,
+    founded_year int,
+    founded_month int,
+    founded_day int,
+    deadpooled_year int,
+    deadpooled_month int,
+    deadpooled_day int,
+    number_of_employees int,
+    email_address text,
+    phone_number text,
+    total_money_raised text,
+    overview text,
+    twitter_username text,
+    acquisition_price_amount decimal,
+    acquisition_acquired_year int,
+    acquisition_acquired_month int,
+    acquisition_acquired_day int,
+    acquisition_acquiring_company text
+);
+""".strip()
+
 with open("insert_companies.cql", "w") as out_file:
+    out_file.write(schema_header + "\n\n")
     out_file.write("\n\n".join(insert_statements))
 
 print("✅ Script insert_companies.cql généré avec succès.")
